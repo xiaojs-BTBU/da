@@ -91,23 +91,37 @@ def create_boxplot(df: pd.DataFrame,
     df = df.copy()
     df[group_var] = df[group_var].astype(str)
     
+    # 确定组别顺序（尝试按数值排序）
+    unique_groups = df[group_var].unique()
+    try:
+        # 尝试转换为浮点数排序
+        order = sorted(unique_groups, key=lambda g: float(g))
+    except ValueError:
+        # 如果转换失败，按字符串排序
+        order = sorted(unique_groups)
+    
     # 创建箱线图
-    boxplot = sns.boxplot(x=group_var, y=measure_var, data=df, 
-                          palette=palette, width=0.6, ax=ax, 
-                          showfliers=False)
+    boxplot = sns.boxplot(x=group_var, y=measure_var, data=df,
+                          palette=palette, width=0.6, ax=ax,
+                          showfliers=False, order=order)
     
     # 添加散点（抖动）
     if show_points:
         sns.stripplot(x=group_var, y=measure_var, data=df,
                       color='black', alpha=0.3, jitter=True,
-                      size=4, ax=ax)
+                      size=4, ax=ax, order=order)
     
     # 添加均值标记
     if show_means:
+        # 获取图表的组别顺序（按照 x 轴刻度顺序）
+        xtick_labels = [t.get_text() for t in ax.get_xticklabels()]
+        # 计算均值，并按照图表顺序排列
         means = df.groupby(group_var)[measure_var].mean()
-        for i, (group, mean) in enumerate(means.items()):
-            ax.plot(i, mean, 'o', markersize=10, markerfacecolor='white', 
-                    markeredgecolor='red', markeredgewidth=2, label='均值' if i == 0 else "")
+        for i, group in enumerate(xtick_labels):
+            if group in means.index:
+                mean = means.loc[group]
+                ax.plot(i, mean, 'o', markersize=10, markerfacecolor='white',
+                        markeredgecolor='red', markeredgewidth=2, label='均值' if i == 0 else "")
     
     # 添加显著性标注
     if posthoc_results and measure_var in posthoc_results.get('by_variable', {}):
@@ -178,23 +192,37 @@ def create_violinplot(df: pd.DataFrame,
     df = df.copy()
     df[group_var] = df[group_var].astype(str)
     
+    # 确定组别顺序（尝试按数值排序）
+    unique_groups = df[group_var].unique()
+    try:
+        # 尝试转换为浮点数排序
+        order = sorted(unique_groups, key=lambda g: float(g))
+    except ValueError:
+        # 如果转换失败，按字符串排序
+        order = sorted(unique_groups)
+    
     # 创建小提琴图
     violin = sns.violinplot(x=group_var, y=measure_var, data=df,
                             palette=palette, inner=inner, ax=ax,
-                            cut=0, bw=0.2)
+                            cut=0, bw=0.2, order=order)
     
     # 添加散点（抖动）
     if show_points:
         sns.stripplot(x=group_var, y=measure_var, data=df,
                       color='black', alpha=0.3, jitter=True,
-                      size=4, ax=ax, zorder=1)
+                      size=4, ax=ax, zorder=1, order=order)
     
     # 添加均值标记
     if show_means:
+        # 获取图表的组别顺序（按照 x 轴刻度顺序）
+        xtick_labels = [t.get_text() for t in ax.get_xticklabels()]
+        # 计算均值，并按照图表顺序排列
         means = df.groupby(group_var)[measure_var].mean()
-        for i, (group, mean) in enumerate(means.items()):
-            ax.plot(i, mean, 'o', markersize=10, markerfacecolor='white',
-                    markeredgecolor='red', markeredgewidth=2, label='均值' if i == 0 else "")
+        for i, group in enumerate(xtick_labels):
+            if group in means.index:
+                mean = means.loc[group]
+                ax.plot(i, mean, 'o', markersize=10, markerfacecolor='white',
+                        markeredgecolor='red', markeredgewidth=2, label='均值' if i == 0 else "")
     
     # 添加显著性标注
     if posthoc_results and measure_var in posthoc_results.get('by_variable', {}):
@@ -272,20 +300,38 @@ def create_barplot_with_scatter(df: pd.DataFrame,
     else:  # sd
         yerr = stats_df['std'].values
     
+    # 确定组别顺序（尝试按数值排序）
+    unique_groups = df[group_var].unique()
+    try:
+        # 尝试转换为浮点数排序
+        order = sorted(unique_groups, key=lambda g: float(g))
+    except ValueError:
+        # 如果转换失败，按字符串排序
+        order = sorted(unique_groups)
+    
+    # 按顺序重新排序 stats_df
+    stats_df = stats_df.set_index(group_var).loc[order].reset_index()
+    
+    # 重新计算 yerr（因为 stats_df 顺序已变）
+    if error_bars == 'se':
+        yerr = stats_df['se'].values
+    else:  # sd
+        yerr = stats_df['std'].values
+    
     # 创建柱状图
-    bars = ax.bar(stats_df[group_var], stats_df['mean'], 
+    print(f"[DEBUG] 柱状图宽度参数: 0.4")
+    bars = ax.bar(stats_df[group_var], stats_df['mean'],
                   yerr=yerr, capsize=5, alpha=0.7,
                   color=sns.color_palette(palette, len(stats_df)),
-                  edgecolor='black', linewidth=1)
+                  edgecolor='black', linewidth=1, width=0.4)
     
     # 添加散点（抖动）
-    unique_groups = df[group_var].unique()
-    for i, group in enumerate(unique_groups):
+    for i, group in enumerate(order):
         group_data = df[df[group_var] == group][measure_var].dropna()
         if len(group_data) > 0:
             # 添加抖动
             x_pos = i + np.random.uniform(-jitter, jitter, len(group_data))
-            ax.scatter(x_pos, group_data, color='black', alpha=0.4, 
+            ax.scatter(x_pos, group_data, color='black', alpha=0.4,
                        s=30, edgecolors='white', linewidth=0.5, zorder=10)
     
     # 添加显著性标注
@@ -357,8 +403,10 @@ def add_significance_annotations(ax,
             return
         
         # 配置 annotator
+        # 使用图表的组别顺序（按照 x 轴刻度顺序）
+        order = [t.get_text() for t in ax.get_xticklabels()]
         annotator = Annotator(ax, pairs, data=df, x=group_var, y=measure_var,
-                              order=sorted(df[group_var].unique()))
+                              order=order)
         annotator.configure(test=None, text_format='star', loc='inside' if plot_type == 'barplot' else 'outside')
         annotator.set_pvalues(pvalues)
         annotator.annotate()
@@ -391,8 +439,8 @@ def add_simple_annotations(ax,
     plot_type : str
         图形类型
     """
-    # 获取组顺序
-    groups = sorted(df[group_var].unique())
+    # 获取组顺序（按照图表的 x 轴刻度顺序）
+    groups = [t.get_text() for t in ax.get_xticklabels()]
     group_indices = {group: i for i, group in enumerate(groups)}
     
     # 获取数据范围

@@ -34,6 +34,9 @@ def load_data(uploaded_file) -> pd.DataFrame:
         # 根据文件扩展名选择加载方式
         file_name = uploaded_file.name.lower()
         
+        # 调试信息：打印文件信息
+        print(f"[DEBUG] 上传的文件名: {uploaded_file.name}, 大小: {uploaded_file.size} 字节, 扩展名: {file_name}")
+        
         if file_name.endswith('.csv'):
             # 尝试自动检测分隔符
             content = uploaded_file.read().decode('utf-8')
@@ -53,7 +56,70 @@ def load_data(uploaded_file) -> pd.DataFrame:
             df = pd.read_csv(uploaded_file)
             
         elif file_name.endswith(('.xls', '.xlsx')):
-            df = pd.read_excel(uploaded_file, engine='openpyxl')
+            # 检查文件大小
+            if uploaded_file.size == 0:
+                raise ValueError("上传的 Excel 文件为空")
+            
+            # 根据扩展名选择引擎
+            if file_name.endswith('.xlsx'):
+                engine = 'openpyxl'
+            else:  # .xls
+                # 检查 xlrd 是否可用
+                try:
+                    import xlrd
+                    engine = 'xlrd'
+                except ImportError:
+                    raise ImportError(
+                        "读取 .xls 文件需要 xlrd 库。请运行 'pip install xlrd' 安装。"
+                    )
+            
+            print(f"[DEBUG] 使用引擎 {engine} 读取 Excel 文件")
+            
+            try:
+                df = pd.read_excel(uploaded_file, engine=engine)
+            except ImportError as import_err:
+                # 引擎导入失败
+                raise ImportError(f"缺少必要的 Excel 读取库: {import_err}")
+            except Exception as excel_error:
+                # 额外调试：读取文件前几个字节
+                uploaded_file.seek(0)
+                first_bytes = uploaded_file.read(10)
+                uploaded_file.seek(0)
+                print(f"[DEBUG] 文件前10字节: {first_bytes}")
+                
+                # 如果是 .xlsx 文件，尝试检查 ZIP 结构
+                if file_name.endswith('.xlsx'):
+                    try:
+                        import zipfile
+                        uploaded_file.seek(0)
+                        with zipfile.ZipFile(uploaded_file, 'r') as zf:
+                            file_list = zf.namelist()
+                            print(f"[DEBUG] ZIP 内容: {file_list}")
+                            # 检查是否存在 workbook 文件
+                            workbook_files = [f for f in file_list if 'xl/workbook.xml' in f or 'xl/workbook.bin' in f]
+                            if not workbook_files:
+                                print("[DEBUG] 警告: ZIP 中未找到 workbook.xml 或 workbook.bin")
+                    except Exception as zip_err:
+                        print(f"[DEBUG] ZIP 检查失败: {zip_err}")
+                    finally:
+                        uploaded_file.seek(0)
+                
+                # 尝试用 openpyxl 直接加载以获取更详细的错误信息
+                if file_name.endswith('.xlsx'):
+                    try:
+                        import openpyxl
+                        uploaded_file.seek(0)
+                        wb = openpyxl.load_workbook(uploaded_file, read_only=True, data_only=True)
+                        print(f"[DEBUG] openpyxl 加载成功，工作表: {wb.sheetnames}")
+                    except Exception as openpyxl_err:
+                        print(f"[DEBUG] openpyxl 加载失败: {openpyxl_err}")
+                        # 检查是否是因为文件损坏
+                        if "no valid workbook part" in str(openpyxl_err):
+                            print("[DEBUG] 错误原因: openpyxl 无法识别工作簿部分，可能是文件损坏或格式不正确")
+                    finally:
+                        uploaded_file.seek(0)
+                
+                raise ValueError(f"Excel 文件读取失败: {excel_error}")
         else:
             raise ValueError(f"不支持的文件格式: {file_name}")
         
